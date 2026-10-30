@@ -1,12 +1,21 @@
-#pragma once
+#ifndef MY__PROTOCOL__H
+#define MY__PROTOCOL__H
 
-class protocol
-{
-public:
-    protocol() {}
-    ~protocol() {}
+#include<my_header.h>
 
-private:
+typedef enum{
+    CMD_PWD=1,
+    CMD_CD,
+    CMD_LS,
+    CMD_PUTS,
+    CMD_GETS,
+    CMD_REMOVE,//删除
+    CMD_INVALID
+}CommandType;
 
-};
-
+//TLV结构体
+typedef struct{
+    int type;//命令类型
+    int length;//数据长度
+}TLVHeader;
+#endif
