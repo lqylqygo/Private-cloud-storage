@@ -23,7 +23,7 @@ void handle_client(int client_socket) {
     strcpy(user.pwd, "/");
     memset(user.username, 0, sizeof(user.username));
     memset(user.encrypted, 0, sizeof(user.encrypted));
-
+    syslog(LOG_INFO, "[线程池] 新客户端连接，sockfd=%d", client_socket);
     while (read(client_socket, &header, sizeof(TLVHeader)) > 0) {
         memset(value, 0, sizeof(value));
         memset(response, 0, sizeof(response));
@@ -50,16 +50,24 @@ void handle_client(int client_socket) {
                     write(client_socket, response, res.length);
                     break;
             }
+            syslog(LOG_INFO,"%s用户登录成功",user.username);
             continue; // 登录阶段处理完毕，直接跳过下面的业务分发
         }
         // =========================================================
-
         // --- 以下为已登录后的业务逻辑，保持你原来的逻辑不变 ---
         switch (header.type) {
-            case CMD_PWD:    cmd_pwd(&ctx, value, response); break;
-            case CMD_CD:     cmd_cd(&ctx, value, response); break;
-            case CMD_LS:     cmd_ls(&ctx, value, response); break;
-            case CMD_REMOVE: cmd_remove(&ctx, value, response); break;
+            case CMD_PWD:
+             syslog(LOG_INFO, "User [%s] use pwd tochecked current path.", user.username);    
+            cmd_pwd(&ctx, value, response); break;
+            case CMD_CD:    
+            syslog(LOG_INFO, "User [%s] use cd to change path to %s.", user.username, value);
+            cmd_cd(&ctx, value, response); break;
+            case CMD_LS:     
+            syslog(LOG_INFO, "User [%s] use ls to list files.", user.username);
+            cmd_ls(&ctx, value, response); break;
+            case CMD_REMOVE:
+            syslog(LOG_WARNING, "User [%s] use remove to delete file %s.", user.username, value);
+            cmd_remove(&ctx, value, response); break;
             case CMD_PUTS:   cmd_puts(&ctx, value, response); break;
             case CMD_PUTS_DATA: 
                 cmd_puts_data(&ctx, value, header.length); 
@@ -80,11 +88,13 @@ void handle_client(int client_socket) {
     }
     
     context_destroy(&ctx);
+    syslog(LOG_INFO, "[线程池] 客户端断开连接，sockfd=%d", client_socket);
     close(client_socket);
 }
 
 // main 保持不变
 int main() {
+    openlog("CloudDisk_Server",LOG_PID|LOG_CONS,LOG_USER);
     // 1. 初始化线程池
     ThreadPool pool;
     pool_init(&pool);
@@ -120,5 +130,6 @@ int main() {
         printf("[主线程] 新客户端连入，丢入线程池\n");
         pool_add_task(&pool, client_socket); 
     }
+    closelog();
     return 0;
 }

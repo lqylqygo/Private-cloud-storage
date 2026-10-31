@@ -34,6 +34,7 @@ void loginCheck1(user_info_t *user)
         header.length=0;
         ret=sendn(user->sockfd,&header,8);
         printf("check1 send %d bytes\n",ret);
+        syslog(LOG_INFO,"[线程池] 用户名不存在，sockfd=%d,username=%s",user->sockfd,user->username);
         return;
     }
     //用户存在的情况下
