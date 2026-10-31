@@ -2,7 +2,79 @@
 
 #define SERVER_IP "127.0.0.1" // 如果服务端在别的机器上，改成对应的IP
 #define PORT 12345
+void userLogin1(int sockfd, char *setting_buf) {
+    TLVHeader header;
+    char user[128] = {0};
+    
+    while (1) {
+        printf("Username: ");
+        fgets(user, sizeof(user), stdin);
+        user[strcspn(user, "\n")] = 0; // 去除换行
 
+        // 发送用户名
+        header.type = TASK_LOGIN_SECTION1;
+        header.length = strlen(user);
+        write(sockfd, &header, sizeof(TLVHeader));
+        write(sockfd, user, header.length);
+
+        // 接收服务器的响应
+        TLVHeader res_header;
+        read(sockfd, &res_header, sizeof(TLVHeader));
+        
+        if (res_header.type == TASK_LOGIN_SECTION1_RESP_ERROR) {
+            printf("用户不存在，请重新输入。\n");
+            continue; // 用户名不对，重新输入
+        }
+
+        // 用户名正确，接收 setting，存入传入的 setting_buf 中
+        if (res_header.length > 0) {
+            read(sockfd, setting_buf, res_header.length);
+            setting_buf[res_header.length] = '\0'; // 加上字符串结束符
+        }
+        break; // 第一阶段成功，退出循环
+    }
+}
+// 第二阶段：使用 setting_buf 加密密码，发送密文
+void userLogin2(int sockfd, const char *setting_buf) {
+    TLVHeader header;
+    char pwd[128] = {0};
+    
+    while (1) {
+        printf("Password: "); // 明文回显
+        fgets(pwd, sizeof(pwd), stdin);
+        pwd[strcspn(pwd, "\n")] = 0; // 去除换行
+
+        printf("[DEBUG] 你输入的原始密码是: [%s], 长度: %ld\n", pwd, strlen(pwd));
+        printf("[DEBUG] 服务器发来的 setting 是: [%s]\n", setting_buf);
+        // 使用第一阶段拿到的 setting_buf 进行加密
+        char *encrypted = crypt(pwd, setting_buf); 
+
+        printf("[DEBUG] 客户端生成的密文是: [%s]\n", encrypted);
+        // 发送密文
+        header.type = TASK_LOGIN_SECTION2;
+        header.length = strlen(encrypted);
+        write(sockfd, &header, sizeof(TLVHeader));
+        write(sockfd, encrypted, header.length);
+
+        // 接收验证结果
+        TLVHeader res_header;
+        read(sockfd, &res_header, sizeof(TLVHeader));
+        
+        if (res_header.type == TASK_LOGIN_SECTION2_RESP_OK) {
+            if (res_header.length > 0) {
+                char path[1024] = {0};
+                read(sockfd, path, res_header.length);
+                printf("Login Success! Current path: %s\n", path);
+            } else {
+                printf("Login Success!\n");
+            }
+            break; // 登录成功，退出循环
+        } else {
+            printf("Password incorrect, try again.\n");
+            continue; // 密码错误，重新输入
+        }
+    }
+}
 int main() {
     int sock = 0;
     struct sockaddr_in serv_addr;
@@ -31,6 +103,12 @@ int main() {
     
     printf("=========================================\n");
     printf("  成功连接到服务端！\n");
+    // ================= 【修改：调用拆分后的两个函数】 =================
+    char setting[128] = {0}; // 用普通数组存 setting 即可
+    
+    userLogin1(sock, setting); // 先执行第一段，把 setting 拿回来
+    userLogin2(sock, setting); // 再执行第二段，用 setting 加密密码
+    // =================================================================
     printf("  支持命令: pwd, cd <目录>, ls, remove <文件>\n");
     printf("            puts <本地文件>, gets <服务器文件>\n");
     printf("=========================================\n");

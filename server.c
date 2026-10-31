@@ -1,6 +1,8 @@
 #include "protocol.h"
 #include "threadpool.h"
-#include "file_ops.h" // 引入业务层
+#include "file_ops.h" //业务层
+#include "user.h"     // 引入用户验证头文件
+
 
 #define PORT 12345
 
@@ -14,13 +16,45 @@ void handle_client(int client_socket) {
     ClientContext ctx;
     context_init(&ctx);
 
+    // 为当前连接创建独立的用户状态
+    user_info_t user;
+    user.sockfd = client_socket;
+    user.status = STATUS_LOGOFF; // 初始状态为未登录
+    strcpy(user.pwd, "/");
+    memset(user.username, 0, sizeof(user.username));
+    memset(user.encrypted, 0, sizeof(user.encrypted));
+
     while (read(client_socket, &header, sizeof(TLVHeader)) > 0) {
         memset(value, 0, sizeof(value));
         memset(response, 0, sizeof(response));
         
         if (header.length > 0) read(client_socket, value, header.length);
 
-        // 命令路由分发
+        // ================= 【新增：登录拦截逻辑】 =================
+        if (user.status == STATUS_LOGOFF) {
+            switch (header.type) {
+                case TASK_LOGIN_SECTION1:
+                    // 阶段1：收到用户名
+                    strncpy(user.username, value, sizeof(user.username) - 1);
+                    loginCheck1(&user); // 调用 user.c 里的函数
+                    break;
+                case TASK_LOGIN_SECTION2:
+                    // 阶段2：收到密文
+                    loginCheck2(&user, value); // 调用 user.c 里的函数
+                    break;
+                default:
+                    // 未登录状态下发了别的命令
+                    strcpy(response, "Error: Please login first.\n");
+                    TLVHeader res = {CMD_INVALID, strlen(response)};
+                    write(client_socket, &res, sizeof(TLVHeader));
+                    write(client_socket, response, res.length);
+                    break;
+            }
+            continue; // 登录阶段处理完毕，直接跳过下面的业务分发
+        }
+        // =========================================================
+
+        // --- 以下为已登录后的业务逻辑，保持你原来的逻辑不变 ---
         switch (header.type) {
             case CMD_PWD:    cmd_pwd(&ctx, value, response); break;
             case CMD_CD:     cmd_cd(&ctx, value, response); break;
@@ -29,11 +63,11 @@ void handle_client(int client_socket) {
             case CMD_PUTS:   cmd_puts(&ctx, value, response); break;
             case CMD_PUTS_DATA: 
                 cmd_puts_data(&ctx, value, header.length); 
-                continue; // 数据流直接continue，不回包
+                continue; 
             case CMD_PUTS_END:  cmd_puts_end(&ctx, response); break;
-             case CMD_GETS:
+            case CMD_GETS:
                 cmd_gets(&ctx, value, response, client_socket);
-                continue; // 因为 cmd_gets 内部已经把数据全发完了，这里直接跳过外面的统一发包
+                continue; 
             default: 
                 strcpy(response, "Error: Unknown Command\n"); 
                 break;
@@ -49,6 +83,7 @@ void handle_client(int client_socket) {
     close(client_socket);
 }
 
+// main 保持不变
 int main() {
     // 1. 初始化线程池
     ThreadPool pool;
