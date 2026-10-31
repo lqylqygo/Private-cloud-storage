@@ -70,5 +70,6 @@ void loginCheck2(user_info_t *user, const char *encrypted) {
         header.type = TASK_LOGIN_SECTION2_RESP_ERROR;
         header.length = 0;
         sendn(user->sockfd, &header, sizeof(TLVHeader));
+        syslog(LOG_WARNING, "安全警告: 用户 [%s] 密码验证失败，sockfd=%d", user->username, user->sockfd);
     }
 }
